@@ -5,10 +5,10 @@ import { u8aToHex } from '@polkadot/util'
 import { ApiPromise, WsProvider } from '@polkadot/api'
 import { Keyring } from '@polkadot/keyring'
 
-const ENDPOINT = 'wss://rpc.relay.blockchain.enjin.io'
+const ENDPOINT = process.env.ENDPOINT
 const MNEMONIC = process.env.MNEMONIC
-if (typeof MNEMONIC !== 'string' || MNEMONIC.length === 0) {
-  console.error(`Usage: MNEMONIC="<mnemonic here>" bun dev`)
+if (typeof ENDPOINT !== 'string' || ENDPOINT.length === 0 || typeof MNEMONIC !== 'string' || MNEMONIC.length === 0) {
+  console.error(`Usage: ENDPOINT="rpc url here" MNEMONIC="<mnemonic here>" bun dev`)
   process.exit(1)
 }
 
@@ -23,11 +23,15 @@ await api.isReadyOrError
 const keyring = new Keyring({ type: 'sr25519', ss58Format: api.registry.chainSS58 })
 const keypair = keyring.addFromMnemonic(MNEMONIC)
 
-const tx = api.tx.balances.transferKeepAlive(
-  keypair.address,
-  // 0.1 ENJ
-  '100000000000000000',
-)
+const tokenDecimals = api.registry.chainDecimals?.[0] ?? 0
+
+// if tokenDecimals is 0; 1 planck; otherwise 0.1 tokens
+const transferAmount = tokenDecimals === 0 ? 1 : 0.1 * Math.pow(10, tokenDecimals)
+
+const tx = api.tx.balances.transferKeepAlive(keypair.address, transferAmount)
+
+console.log('Account address', keypair.address)
+console.log('Transfer amount', transferAmount)
 
 const tokenSymbol = api.registry.chainTokens[0]
 const decimals = api.registry.chainDecimals[0]
@@ -69,16 +73,17 @@ console.log(
   specVersion,
   '\nmetadataHashParams',
   metadataHashParams,
+  '\n',
 )
 
 try {
-  console.log('Submitting tx')
+  console.log('Submitting tx', tx.toHuman())
   const result = await tx.signAndSend(keypair, {
     ...metadataHashParams,
     withSignedTransaction: true,
   })
 
-  console.log(`Tx submitted: https://enjin.subscan.io/extrinsic/${result.toHex()}`)
+  console.log(`Tx submitted: ${result.toHex()}`)
   process.exit(0)
 } catch (cause) {
   console.error('Failed to submit tx:', cause)
